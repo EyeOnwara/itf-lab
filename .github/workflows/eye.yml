@@ -1,0 +1,71 @@
+name: My-Pipeline
+'on':
+  pull_request:
+    branches:
+      - master
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install Dependencies
+        run: |
+          if ! command -v npm > /dev/null 2>&1; then npm install -g npm; fi
+          npm ci
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: npm-${{ runner.os }}
+
+      - name: Run Tests
+        run: npm test
+
+      - name: Check Code Quality
+        run: npm run lint
+
+      - name: Security check
+        run: |
+          case "npm_audit" in
+            npm_audit) npm audit --audit-level=high ;;
+            trivy) docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v $PWD:/src aquasec/trivy fs --exit-code 1 /src ;;
+            codeql) echo "Add CodeQL action step manually if needed" ;;
+            *) npm audit --audit-level=high ;;
+          esac
+
+      - name: Upload Coverage
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Build Project
+        run: npm run build
+
+      - name: Build Docker Image
+        run: docker build -t username/repo:latest .
+
+      - name: Push to Docker Hub
+        if: false
+        run: |
+          echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
+          docker push username/repo:latest
+
+      - name: Notify Slack
+        if: always()
+        run: |
+          curl -X POST -H 'Content-type: application/json' --data '{"text":"${{ github.repository }} pipeline #${{ github.run_number }} on ${{ github.ref_name }} - completed"}' ${{ secrets.SLACK_WEBHOOK_URL }}
+
+          schedule:
+          - cron: '0 0 * * *'
+
+          schedule:
+          - cron: '0 0 * * *'
